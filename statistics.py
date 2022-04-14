@@ -11,7 +11,7 @@ import warnings
 # filter some warnings
 warnings.filterwarnings('ignore')
 
-
+# Computes the daily Sharpe Ratio because the strategy returns are daily
 def sharpe_ratio_daily(strategy_returns, risk_free_return = 0):
     # the returns are daily so we can get the mean and standard deviation normally
     strategy_expected_return = np.mean(strategy_returns)
@@ -19,6 +19,7 @@ def sharpe_ratio_daily(strategy_returns, risk_free_return = 0):
     daily_sharpe_ratio = (strategy_expected_return - risk_free_return) / strategy_std
     return daily_sharpe_ratio
     
+# Computes the annual Sharpe Ratio from daily returns
 def sharpe_ratio_annual(strategy_returns, risk_free_return = 0):
     # if we want to get the annual sharpe ratio we need to annualise the returns and the standard deviation
     # we cannot just multiply by 252 (num trading days) because 1% increase every day for a year won't give 252% yearly return
@@ -35,6 +36,7 @@ def sharpe_ratio_annual(strategy_returns, risk_free_return = 0):
     
     return annualised_sharpe_ratio
 
+# Same annual Sharpe Ratio but with log returns implementation
 def sharpe_ratio_annual_log(strategy_returns, risk_free_return = 0):
     # convert simple returns to log returns. Other option is to compute the log returns from the normal prices log(S1 - S0)
     log_returns = np.log(strategy_returns + 1)
@@ -59,11 +61,13 @@ def sharpe_ratio_annual_log(strategy_returns, risk_free_return = 0):
     #data['Daily Return'] = data['Adj Close'].pct_change()   
     #return data.dropna()
 
+# Daily Sortino Ratio
 def sortino_ratio_daily(strategy_returns, risk_free_return = 0):
     strategy_expected_return = strategy_returns.mean()
     strategy_std_neg = strategy_returns[strategy_returns<0].std()
     return (strategy_expected_return - risk_free_return) / strategy_std_neg
 
+# Annual Sortino Ratio
 def sortino_ratio_annual(strategy_returns, risk_free_return = 0):
     trading_days = 252
     
@@ -112,14 +116,14 @@ def adjust_SR(SR_values, T, period, correction_method = "bonferroni", alpha = 0.
     # Sharpe ratios to t stats
     t_stat = SR_values * math.sqrt(T / period)
     
-    # T stat to p values (only right sided because no need to adjust negatives)
-    p_single = scipy.stats.t.sf(t_stat, df=T-1)
+    # T stat to p values (no need to adjust negatives)
+    p_single = 2 * scipy.stats.t.sf(t_stat, df=T-1)
     
     # Adjust p values with chosen correction method
     p_single_adj = statsmodels.stats.multitest.multipletests(pvals = p_single, method = correction_method, alpha = alpha)
     
     # Revert back adjusted p values to adjusted t stats
-    t_stat_adj = scipy.stats.t.isf(p_single_adj[1], df=T-1)
+    t_stat_adj = scipy.stats.t.isf(p_single_adj[1]/2, df=T-1)
     
     # Revert back t stats to Sharpe ratios
     SR_adj = t_stat_adj / math.sqrt(T) * math.sqrt(period)
@@ -129,7 +133,7 @@ def adjust_SR(SR_values, T, period, correction_method = "bonferroni", alpha = 0.
     SR_accepted = check_hypothesis(p_single, alpha)
     
     # Retrieve the correct adjusted alpha values per the docs of multipletests library
-    if (correction_method == "bonferroni " or correction_method == "holm "):
+    if (correction_method == "bonferroni" or correction_method == "holm"):
         alpha_adj = p_single_adj[3]
     elif (correction_method == "sidak" or correction_method == "holm-sidak"):
         alpha_adj = p_single_adj[2]
@@ -137,10 +141,11 @@ def adjust_SR(SR_values, T, period, correction_method = "bonferroni", alpha = 0.
         raise Exception("Invalid correction method")
     
     # Check which strategies meet the new threshold
-    SR_adj_accepted = check_hypothesis(p_single_adj, alpha_adj)
+    SR_adj_accepted = check_hypothesis(p_single_adj[1], alpha_adj)
     
     return ((SR_values, SR_accepted, alpha), (SR_adj, SR_adj_accepted, alpha_adj))
 
+# Check whether to accept or reject the strategy
 def check_hypothesis(p_values, alpha):
     checks = []
     for p in p_values:
@@ -151,5 +156,6 @@ def check_hypothesis(p_values, alpha):
             
     return checks
     
+# Computes the Family-wise error rate
 def get_FWER(alpha, N):
     return 1 - (1 - alpha)**N

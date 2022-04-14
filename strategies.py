@@ -18,8 +18,13 @@ import warnings
 # filter some warnings
 warnings.filterwarnings('ignore')
 
-
+"""
+    Class to create random Synthetic Time Series.
+    The parameters are preset to meet the requirements, but can be adjusted if needed
+    Seed can be specified to get the same Time Series
+"""
 class SyntheticTimeSeries():
+    # Create the Time Series
     def __init__(self, t = 3000, phi = 0.5, d = 0.02, theta = -0.3, mean = 0, variance = 1, p0 = 1000, p1 = 1000, seed = 1, train_test_split = 0.7):
         np.random.seed(seed)
         series = [p0, p1]
@@ -37,12 +42,15 @@ class SyntheticTimeSeries():
     def get_df_col(self, col):
         return self.df[col]
     
+    # Get the prices
     def get_prices(self):
         return self.df["Prices"]
     
+    # Get the returns
     def get_returns(self):
         return (self.get_prices().shift(-1) / self.get_prices() - 1).dropna()
         
+    # Choose which data to use - train, test or both
     def split_data(self, prices, use_set = "all"):
         if (use_set == "all"):
             return prices
@@ -64,6 +72,7 @@ class SyntheticTimeSeries():
         plt.ylabel(ylabel)
         plt.show()
     
+    # Computes SMA
     def get_simple_moving_average(prices, period):
         ma = prices.rolling(window=period).mean()
         for i in range(period):
@@ -72,6 +81,7 @@ class SyntheticTimeSeries():
         
         return ma
 
+    # Computes EMA
     def get_exponential_moving_average(prices, alpha):
         return prices.ewm(alpha=alpha, adjust=False).mean()
 
@@ -95,7 +105,11 @@ class SyntheticTimeSeries():
             
         print (kpss_output) 
 
-
+"""
+    Class that encapsulates the Trend Following Strategy
+    Both with SMA and EMA was impelemnted for comparison purposes
+    The df object needs to be of type SyntheticTimeSeries in order to reuse the code above
+"""
 class TrendFollowing():
     def __init__(self, df, cash_start, train_test_split = 0.7):
         if not isinstance(df, SyntheticTimeSeries):
@@ -105,6 +119,7 @@ class TrendFollowing():
         self.cash_start = cash_start
         self.train_test_split = train_test_split
     
+    # Trend Following with simple moving average
     def TF_sma(self, sme_period = 20, use_set = "all"):
         prices = self.df.split_data(self.df.get_prices(), use_set = use_set)
         w = np.zeros(np.shape(prices))
@@ -114,6 +129,7 @@ class TrendFollowing():
         strategy_returns = TrendFollowing.position(prices, ma, w, cash)
         return strategy_returns
         
+    # Trend Following with exponential moving average
     def TF_ema(self, alpha = 0.5, use_set = "all"):
         prices = self.df.split_data(self.df.get_prices(), use_set = use_set)
         w = np.zeros(np.shape(prices))
@@ -123,6 +139,7 @@ class TrendFollowing():
         strategy_returns = TrendFollowing.position(prices, ma, w, cash)
         return strategy_returns
         
+    # Decide whether to buy, hold or sell. Update cash and volume appropriately
     def position(prices, ma, w, cash):
         for i in range(len(prices) - 1):
             pd_index = i + prices.first_valid_index()
@@ -139,7 +156,10 @@ class TrendFollowing():
                 
         return [a*b for a,b in zip(w,prices)]+ cash
 
-
+"""
+    Class that encapsulates the Mean Reversion Strategy
+    Implemented both SMA and Bands+RSI
+"""
 class MeanReversion():
     def __init__(self, df, cash_start, train_test_split = 0.7):
         if not isinstance(df, SyntheticTimeSeries):
@@ -149,6 +169,7 @@ class MeanReversion():
         self.cash_start = cash_start
         self.train_test_split = train_test_split
         
+    # Mean Reversion with SMA
     def MR_sma(self, period = 20, use_set = "all"):
         prices = self.df.split_data(self.df.get_prices(), use_set = use_set)
         ma = SyntheticTimeSeries.get_simple_moving_average(prices, period)
@@ -172,7 +193,7 @@ class MeanReversion():
         mr_strategy = [a*b for a,b in zip(w,prices)]+ cash
         return mr_strategy
         
-
+    # Mean Reversion with Bands and RSI
     def MR_bb_rsi(self, bb_period = 20, bb_std = 2, rsi_period = 6, use_set = "all"):
         prices = self.df.split_data(self.df.get_prices(), use_set = use_set)
         w = np.zeros(np.shape(prices))
@@ -198,6 +219,7 @@ class MeanReversion():
         mr_strategy = [a*b for a,b in zip(w,prices)]+ cash
         return mr_strategy
 
+    # Compute the Bands
     def get_bollinger_bands(prices, period = 20, num_std = 2):
         ma = SyntheticTimeSeries.get_simple_moving_average(prices, period)
         std = prices.rolling(period).std() 
@@ -210,6 +232,7 @@ class MeanReversion():
            
         return upper, lower
 
+    # Compute RSI
     def get_rsi(prices, period):
         delta = prices.diff()
         gain = delta.clip(lower=0)
@@ -221,7 +244,9 @@ class MeanReversion():
         rsi = rsi.fillna(50)
         return rsi
 
-
+"""
+    Class that encapsulates ARIMA+GARCH trading strategy
+"""
 class ForecastArimaGarch():    
     def __init__(self, df, cash_start, train_test_split = 0.7):
         if not isinstance(df, SyntheticTimeSeries):
@@ -233,11 +258,11 @@ class ForecastArimaGarch():
         self.prices = self.df.get_df_col("Prices")
         self.returns = self.df.get_returns()
                 
+    # Make one ARIMA+GARCH prediction
     def ARIMA_predict(data, p, d, q):
         # fit ARIMA on returns
         arima_model = ARIMA(data, order=(p,d,q))
         model_fit = arima_model.fit()
-        
         arima_residuals = model_fit.resid
 
         # fit a GARCH(1,1) model on the residuals of the ARIMA model
@@ -254,6 +279,7 @@ class ForecastArimaGarch():
         # Combine both models' output: yt = mu + et
         return predicted_mu + predicted_et
 
+    # Buy, hold or sell given the arima prediciton
     def ARIMA_position(arima_prediction, cash, w, price):
         if arima_prediction == 0:
             next_w = w
@@ -267,6 +293,7 @@ class ForecastArimaGarch():
             
         return next_cash, next_w
     
+    # ARIMA+GARCH only on the test set
     def ARIMA_GARCH_test(self):
         period = int(len(self.returns) * self.train_test_split)
         arima_prediction = np.zeros(np.shape(self.returns))
@@ -290,6 +317,7 @@ class ForecastArimaGarch():
         arima_strategy = [a*b for a,b in zip(w, self.prices)]+ cash
         return arima_strategy, arima_prediction
     
+    # ARIMA+GARCH on the whole dataset
     def ARIMA_GARCH_all(self):
         period = int(len(self.returns) * self.train_test_split)
         arima_prediction = np.zeros(np.shape(self.returns))
@@ -314,6 +342,7 @@ class ForecastArimaGarch():
         arima_strategy = [a*b for a,b in zip(self.w, self.prices)]+ self.cash   
         return arima_strategy, arima_prediction
     
+    # ARIMA+GARCH only on the train set
     def ARIMA_GARCH_train(self):
         period = int(len(self.returns) * self.train_test_split)
         returns = self.returns[:period]
@@ -329,4 +358,3 @@ class ForecastArimaGarch():
                 
         arima_strategy = [a*b for a,b in zip(w, self.prices)]+ cash
         return arima_strategy, arima_prediction
-
